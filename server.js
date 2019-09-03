@@ -1,62 +1,79 @@
-var fs = require('fs');
-var express = require('express');
-var path = require('path');
-var shell = require('shelljs');
-var filePath = ''
-var filename = ''
+const fs = require('fs');
+const express = require('express');
+const path = require('path');
+const shell = require('shelljs');
+const targz = require('targz');
+const serveIndex = require('serve-index')
 
+let filePath;
+let filename;
+let ltsFilePath;
 
-var app = express();
+const app = express();
 app.use(express.json());
-app.use(express.static('public'));
 
 
-function createDir(){
-    try {
-        if(!fs.exists(filePath)){
+//function to create a new directory
+function createDir(filePath, ltsFilePath){
+    var b = fs.exists(filePath, function(error){
+        if(error){
+            console.log("ERROR: ", error);
+        }
+        else{
             shell.mkdir('-p',filePath);
         }
-    } catch (error) {
-        console.log(error)
-    }
+    });
+    var c = fs.exists(ltsFilePath, function(error){
+        console.log("ERROR: ", error);
+        shell.mkdir('-p',filePath);
+    });
 }
 
-function copyFile(file, newDir){
-    var source = fs.createReadStream(file);
-    var dest = fs.createWriteStream(newDir);
-  
-    source.pipe(dest);
-    source.on('end', function() { console.log('Succesfully copied'); });
-    source.on('error', function(err) { console.log(err); });
-};
+//function to extract the files from the upload
+const extractFiles = async(oldDir, newDirs) => {
+    newDirs.forEach(element => {
+        console.log("Extracted to ", element);
+        targz.decompress({
+            src: oldDir,
+            dest: element
+        }, (err) => {
+            if(err) {
+                throw new Error(err);
+            }
+        });            
+    });
+}
 
+//recieve the initial information about the file
 app.post('/newFile', function(req, res){
-    try {
-        filePath = req.body.path;
-        filename = req.body.name;
-        createDir();
-        path.join(filePath, '/');
-        res.send('200 OK');
-    } catch (error) {
-        res.send('400 ERROR');
-    }
+    filePath = req.body.path;
+    filename = req.body.name;
+    ltsFilePath = req.body.lts
+    console.log(req.body);
+    createDir(filePath, ltsFilePath);
+    path.join(filePath, '/');
+    res.send('200 OK');
 });
 
-app.post('/uploadFile', function (req, res, next) {
-    try {
-        req.pipe(fs.createWriteStream(path.join(filePath, filename)));
-        req.on('end', next);
+//completes the process by upload the file
+app.post('/uploadFile', async (req, res, next) => {
+    req.pipe(fs.createWriteStream(path.join(filePath, filename)));
+    req.on('end', next);
 
-        //update latest
-        var ltsFile = path.join(path.join(filePath, 'lts/'),filename);
-        copyFile(path.join(filePath, filename), ltsFile);
+    await extractFiles(path.join(filePath, filename), [filePath, ltsFilePath]);
 
-        res.send('200 OK');
-    } catch (error) {
-        res.send(error);
-    }
+    res.status(200).json({ ok:true });
+
+    fs.unlink(path.join(filePath, filename), (err) => {
+        err ? console.log(err) : "";
+    });
 });
 
-app.listen(3000, '192.168.3.133');
+app.use('/public', express.static('public'), serveIndex('public', {'icons': true}))
 
-console.log('Listenning!');
+app.listen(3000, (error) => {
+    if(error)
+        console.log(error);
+    else
+        console.log('Server is running in port 3000');
+});

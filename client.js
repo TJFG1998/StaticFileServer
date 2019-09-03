@@ -9,7 +9,7 @@ const argvs = process.argv.slice(2);
 try {
     var n = request.post({ 
                             headers: {'content-type' : 'application/json'},
-                            url :'http://192.168.3.133:3000/newFile',
+                            url :'http://ip:3000/newFile',
                             json:{
                                 path : argvs[0],//'./public/new/mega',
                                 name : argvs[1]//'index.html'
