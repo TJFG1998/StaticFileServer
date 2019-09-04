@@ -7,14 +7,12 @@ const serveIndex = require('serve-index')
 
 let filePath;
 let filename;
-let ltsFilePath;
-
 const app = express();
 app.use(express.json());
 
 
 //function to create a new directory
-function createDir(filePath, ltsFilePath){
+function createDir(filePath){
     var b = fs.exists(filePath, function(error){
         if(error){
             console.log("ERROR: ", error);
@@ -23,34 +21,26 @@ function createDir(filePath, ltsFilePath){
             shell.mkdir('-p',filePath);
         }
     });
-    var c = fs.exists(ltsFilePath, function(error){
-        console.log("ERROR: ", error);
-        shell.mkdir('-p',filePath);
-    });
 }
 
 //function to extract the files from the upload
-const extractFiles = async(oldDir, newDirs) => {
-    newDirs.forEach(element => {
-        console.log("Extracted to ", element);
-        targz.decompress({
-            src: oldDir,
-            dest: element
-        }, (err) => {
-            if(err) {
-                throw new Error(err);
-            }
-        });            
-    });
+const extractFiles = async(oldDir, newDir) => {
+    targz.decompress({
+        src: oldDir,
+        dest: newDir
+    }, (err) => {
+        if(err) {
+            throw new Error(err);
+        }
+    }); 
 }
 
-//recieve the initial information about the file
+//receive the initial information about the file
 app.post('/newFile', function(req, res){
     filePath = req.body.path;
     filename = req.body.name;
-    ltsFilePath = req.body.lts
     console.log(req.body);
-    createDir(filePath, ltsFilePath);
+    createDir(filePath);
     path.join(filePath, '/');
     res.send('200 OK');
 });
@@ -60,7 +50,7 @@ app.post('/uploadFile', async (req, res, next) => {
     req.pipe(fs.createWriteStream(path.join(filePath, filename)));
     req.on('end', next);
 
-    await extractFiles(path.join(filePath, filename), [filePath, ltsFilePath]);
+    await extractFiles(path.join(filePath, filename), filePath);
 
     res.status(200).json({ ok:true });
 
@@ -69,9 +59,45 @@ app.post('/uploadFile', async (req, res, next) => {
     });
 });
 
+//download a file from server
+app.get('/download/:file',(req, res) => {
+    res.download(path.join('./public/files/',req.params.file), req.params.file); 
+});
+
+//display a video
+app.get('/video/:id', function(req, res) {
+    const path = './public/videos/' + req.params.id;
+    const stat = fs.statSync(path);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+    if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize-1;
+        const chunksize = (end-start) + 1;
+        const file = fs.createReadStream(path, {start, end});
+        const head = {
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': chunksize,
+            'Content-Type': 'video/mp4',
+        };
+        res.writeHead(206, head);
+        file.pipe(res);
+    } 
+    else {
+      const head = {
+        'Content-Length': fileSize,
+        'Content-Type': 'video/mp4',
+      };
+      res.writeHead(200, head);
+      fs.createReadStream(path).pipe(res);
+    }
+});
+
 app.use('/public', express.static('public'), serveIndex('public', {'icons': true}))
 
-app.listen(3000, (error) => {
+app.listen(process.env.PORT, (error) => {
     if(error)
         console.log(error);
     else

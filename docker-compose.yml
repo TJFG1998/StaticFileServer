@@ -1,0 +1,11 @@
+version: "3"
+services:
+  reportserver:
+    image: registry.base.displax.com/report-server:latest
+    ports:
+      - 3000:3000
+    volumes:
+       - reports-volume:/app/public
+volumes:
+  reports-volume:
+    external: true
